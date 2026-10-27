@@ -1,0 +1,595 @@
+═══════════════════════════════════════════════════════════════
+        NIGHTWATCH — COMPLETE API TEST GUIDE (Postman)
+        All Rights Reserved © Adil Hassan
+═══════════════════════════════════════════════════════════════ 
+
+BASE URL: http://localhost:5000
+
+INSTRUCTIONS:
+- Follow the order below — do not skip steps
+- Copy token after login and use in all protected routes
+- Headers for protected routes: Authorization: Bearer <your_token>
+- Body type: raw → JSON (unless file upload)
+
+───────────────────────────────────────────────────────────────
+SECTION 1 — AUTH ROUTES (/api/auth)
+───────────────────────────────────────────────────────────────
+
+TEST 1.1 — Register (Normal User)
+----------------------------------
+Method : POST
+URL    : http://localhost:5000/api/auth/register
+Body   :
+{
+  "username": "adilhassan",
+  "email": "adil@test.com",
+  "password": "test1234"
+}
+Expected Status : 201
+Expected Body   :
+{
+  "token": "<jwt_token>",
+  "user": {
+    "id": "<mongodb_id>",
+    "username": "adilhassan",
+    "email": "adil@test.com",
+    "role": "user"
+  }
+}
+Notes: Copy the token — you will need it later.
+
+
+TEST 1.2 — Register (Duplicate Email)
+---------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/auth/register
+Body   :
+{
+  "username": "adil2",
+  "email": "adil@test.com",
+  "password": "test1234"
+}
+Expected Status : 500 (MongoDB duplicate key error)
+Notes: This confirms unique email constraint is working.
+
+
+TEST 1.3 — Register (Missing Fields)
+--------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/auth/register
+Body   :
+{
+  "email": "noname@test.com"
+}
+Expected Status : 500
+Notes: Mongoose validation should reject missing required fields.
+
+
+TEST 1.4 — Login (Correct Credentials)
+----------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/auth/login
+Body   :
+{
+  "email": "adil@test.com",
+  "password": "test1234"
+}
+Expected Status : 200
+Expected Body   :
+{
+  "token": "<jwt_token>",
+  "user": { ... }
+}
+Notes: Copy this token — use it in all protected route tests below.
+
+
+TEST 1.5 — Login (Wrong Password)
+-----------------------------------
+Method : POST
+URL    : http://localhost:5000/api/auth/login
+Body   :
+{
+  "email": "adil@test.com",
+  "password": "wrongpassword"
+}
+Expected Status : 401
+Expected Body   :
+{
+  "message": "Invalid credentials"
+}
+
+
+TEST 1.6 — Login (Non-existent Email)
+---------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/auth/login
+Body   :
+{
+  "email": "nobody@test.com",
+  "password": "test1234"
+}
+Expected Status : 401
+Expected Body   :
+{
+  "message": "Invalid credentials"
+}
+
+
+───────────────────────────────────────────────────────────────
+SECTION 2 — VIDEO ROUTES (/api/videos)
+───────────────────────────────────────────────────────────────
+
+TEST 2.1 — Get All Videos (Public, No Token)
+---------------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/videos
+Headers: none
+Expected Status : 200
+Expected Body   : [] (empty array — no videos yet)
+
+
+TEST 2.2 — Upload Video (Authenticated)
+-----------------------------------------
+Method  : POST
+URL     : http://localhost:5000/api/videos
+Headers : Authorization: Bearer <your_token>
+Body    : form-data (NOT raw JSON)
+  Key: video      | Type: File | Value: select any .mp4 file
+  Key: thumbnail  | Type: File | Value: select any .jpg file
+  Key: title      | Type: Text | Value: My First Video
+  Key: description| Type: Text | Value: This is a test video
+  Key: genre      | Type: Text | Value: Technology
+Expected Status : 201
+Expected Body   :
+{
+  "_id": "<video_id>",
+  "title": "My First Video",
+  "videoUrl": "https://res.cloudinary.com/...",
+  "thumbnail": "https://res.cloudinary.com/...",
+  "owner": "<user_id>",
+  "views": 0,
+  "isPublished": true
+}
+Notes: Copy the _id — needed for tests below.
+
+
+TEST 2.3 — Upload Video (No Token)
+------------------------------------
+Method  : POST
+URL     : http://localhost:5000/api/videos
+Headers : none
+Body    : form-data (same as above)
+Expected Status : 401
+Expected Body   :
+{
+  "message": "No token, access denied"
+}
+
+
+TEST 2.4 — Get Single Video (Views Increment)
+----------------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/videos/<video_id>
+Headers: none
+Expected Status : 200
+Expected Body   : video object with owner populated
+Notes: Call this 3 times — views should increment each time.
+       Check views field increases: 1, 2, 3...
+
+
+TEST 2.5 — Get Single Video (Invalid ID)
+-----------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/videos/invalidid123
+Headers: none
+Expected Status : 500 or 404
+Notes: Confirms error handling for bad MongoDB ObjectId.
+
+
+TEST 2.6 — Update Video (Owner)
+---------------------------------
+Method : PUT
+URL    : http://localhost:5000/api/videos/<video_id>
+Headers: Authorization: Bearer <your_token>
+Body   :
+{
+  "title": "Updated Title",
+  "description": "Updated description"
+}
+Expected Status : 200
+Expected Body   : updated video object with new title
+
+
+TEST 2.7 — Update Video (No Token)
+------------------------------------
+Method : PUT
+URL    : http://localhost:5000/api/videos/<video_id>
+Headers: none
+Body   :
+{
+  "title": "Hacker Title"
+}
+Expected Status : 401
+Expected Body   :
+{
+  "message": "No token, access denied"
+}
+
+
+TEST 2.8 — Delete Video (Owner)
+---------------------------------
+Method : DELETE
+URL    : http://localhost:5000/api/videos/<video_id>
+Headers: Authorization: Bearer <your_token>
+Expected Status : 200
+Expected Body   :
+{
+  "message": "Video deleted"
+}
+Notes: Upload another video first (Test 2.2) so you have one to delete.
+
+
+TEST 2.9 — Delete Video (Wrong User)
+--------------------------------------
+Steps:
+1. Register a second user (Test 1.1 with different email)
+2. Login as second user, get token
+3. Try to delete first user's video with second user's token
+Method : DELETE
+URL    : http://localhost:5000/api/videos/<first_users_video_id>
+Headers: Authorization: Bearer <second_users_token>
+Expected Status : 403
+Expected Body   :
+{
+  "message": "Not your video"
+}
+
+
+───────────────────────────────────────────────────────────────
+SECTION 3 — USER ROUTES (/api/users)
+───────────────────────────────────────────────────────────────
+
+TEST 3.1 — Get User Profile (Public)
+--------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/users/<user_id>
+Headers: none
+Expected Status : 200
+Expected Body   : user object WITHOUT password field
+Notes: Confirm password is not returned — security check.
+
+
+TEST 3.2 — Get User Profile (Invalid ID)
+-----------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/users/fakeid999
+Expected Status : 404 or 500
+
+
+TEST 3.3 — Update My Profile (Authenticated)
+---------------------------------------------
+Method : PUT
+URL    : http://localhost:5000/api/users/me
+Headers: Authorization: Bearer <your_token>
+Body   :
+{
+  "username": "adil_updated"
+}
+Expected Status : 200
+Expected Body   : updated user object without password
+
+
+TEST 3.4 — Update My Profile (No Token)
+-----------------------------------------
+Method : PUT
+URL    : http://localhost:5000/api/users/me
+Headers: none
+Body   :
+{
+  "username": "hacker"
+}
+Expected Status : 401
+
+
+TEST 3.5 — Get My Videos (Authenticated)
+------------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/users/me/videos
+Headers: Authorization: Bearer <your_token>
+Expected Status : 200
+Expected Body   : array of videos owned by logged in user
+
+
+TEST 3.6 — Get My Videos (No Token)
+-------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/users/me/videos
+Headers: none
+Expected Status : 401
+
+
+───────────────────────────────────────────────────────────────
+SECTION 4 — REPORT ROUTES (/api/reports)
+───────────────────────────────────────────────────────────────
+
+NOTE: Upload a video first (Test 2.2) if you deleted it.
+
+TEST 4.1 — Create Report (Authenticated)
+------------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/reports
+Headers: Authorization: Bearer <your_token>
+Body   :
+{
+  "videoId": "<video_id>",
+  "reason": "This video violates community guidelines"
+}
+Expected Status : 201
+Expected Body   :
+{
+  "_id": "<report_id>",
+  "video": "<video_id>",
+  "reportedBy": "<user_id>",
+  "reason": "This video violates community guidelines",
+  "status": "pending"
+}
+
+
+TEST 4.2 — Create Duplicate Report (Same User, Same Video)
+-----------------------------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/reports
+Headers: Authorization: Bearer <your_token>
+Body   :
+{
+  "videoId": "<same_video_id>",
+  "reason": "Reporting again"
+}
+Expected Status : 400
+Expected Body   :
+{
+  "message": "You already reported this video"
+}
+
+
+TEST 4.3 — Create Report (No Token)
+-------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/reports
+Headers: none
+Body   :
+{
+  "videoId": "<video_id>",
+  "reason": "Test"
+}
+Expected Status : 401
+
+
+TEST 4.4 — Create Report (Missing Fields)
+-------------------------------------------
+Method : POST
+URL    : http://localhost:5000/api/reports
+Headers: Authorization: Bearer <your_token>
+Body   :
+{
+  "videoId": "<video_id>"
+}
+Expected Status : 400
+Expected Body   :
+{
+  "message": "Video ID and reason are required"
+}
+
+
+───────────────────────────────────────────────────────────────
+SECTION 5 — ADMIN ROUTES (/api/admin)
+───────────────────────────────────────────────────────────────
+
+SETUP BEFORE THESE TESTS:
+1. Go to MongoDB Atlas
+2. Open your database → users collection
+3. Find your user document
+4. Edit: change role from "user" to "admin"
+5. Save
+6. Login again (Test 1.4) to get a fresh token with admin role
+7. Use this new token for all admin tests below
+
+
+TEST 5.1 — Get All Users (Admin)
+----------------------------------
+Method : GET
+URL    : http://localhost:5000/api/admin/users
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 200
+Expected Body   : array of all users (without passwords)
+
+
+TEST 5.2 — Get All Users (Normal User Token)
+----------------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/admin/users
+Headers: Authorization: Bearer <normal_user_token>
+Expected Status : 403
+Expected Body   :
+{
+  "message": "Admin access only"
+}
+
+
+TEST 5.3 — Get All Users (No Token)
+-------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/admin/users
+Headers: none
+Expected Status : 401
+
+
+TEST 5.4 — Ban User (Toggle)
+------------------------------
+Method : PUT
+URL    : http://localhost:5000/api/admin/users/<normal_user_id>/ban
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 200
+Expected Body   :
+{
+  "message": "User banned",
+  "isBanned": true
+}
+Notes: Call again — should toggle to unbanned:
+{
+  "message": "User unbanned",
+  "isBanned": false
+}
+
+
+TEST 5.5 — Delete User (Admin)
+--------------------------------
+Method : DELETE
+URL    : http://localhost:5000/api/admin/users/<user_id>
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 200
+Expected Body   :
+{
+  "message": "User deleted successfully"
+}
+
+
+TEST 5.6 — Admin Delete Own Account (Should Fail)
+---------------------------------------------------
+Method : DELETE
+URL    : http://localhost:5000/api/admin/users/<your_own_admin_id>
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 400
+Expected Body   :
+{
+  "message": "Cannot delete your own account"
+}
+
+
+TEST 5.7 — Get All Videos (Admin)
+-----------------------------------
+Method : GET
+URL    : http://localhost:5000/api/admin/videos
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 200
+Expected Body   : array of all videos with owner info populated
+
+
+TEST 5.8 — Admin Delete Video
+-------------------------------
+Method : DELETE
+URL    : http://localhost:5000/api/admin/videos/<video_id>
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 200
+Expected Body   :
+{
+  "message": "Video removed by admin"
+}
+
+
+TEST 5.9 — Get All Reports (Admin)
+------------------------------------
+Method : GET
+URL    : http://localhost:5000/api/admin/reports
+Headers: Authorization: Bearer <admin_token>
+Expected Status : 200
+Expected Body   : array of reports with video and user info populated
+
+
+TEST 5.10 — Resolve Report
+----------------------------
+Method : PUT
+URL    : http://localhost:5000/api/admin/reports/<report_id>
+Headers: Authorization: Bearer <admin_token>
+Body   :
+{
+  "status": "resolved"
+}
+Expected Status : 200
+Expected Body   : updated report with status: "resolved"
+
+
+TEST 5.11 — Dismiss Report
+----------------------------
+Method : PUT
+URL    : http://localhost:5000/api/admin/reports/<report_id>
+Headers: Authorization: Bearer <admin_token>
+Body   :
+{
+  "status": "dismissed"
+}
+Expected Status : 200
+Expected Body   : updated report with status: "dismissed"
+
+
+TEST 5.12 — Invalid Report Status
+-----------------------------------
+Method : PUT
+URL    : http://localhost:5000/api/admin/reports/<report_id>
+Headers: Authorization: Bearer <admin_token>
+Body   :
+{
+  "status": "whatever"
+}
+Expected Status : 400
+Expected Body   :
+{
+  "message": "Invalid status value"
+}
+
+
+───────────────────────────────────────────────────────────────
+COMPLETE TEST CHECKLIST
+───────────────────────────────────────────────────────────────
+
+AUTH
+[ ] 1.1  Register success
+[ ] 1.2  Register duplicate email
+[ ] 1.3  Register missing fields
+[ ] 1.4  Login success + token copied
+[ ] 1.5  Login wrong password
+[ ] 1.6  Login non-existent email
+
+VIDEOS
+[ ] 2.1  Get all videos (empty)
+[ ] 2.2  Upload video (authenticated)
+[ ] 2.3  Upload video (no token)
+[ ] 2.4  Get single video + views increment
+[ ] 2.5  Get single video invalid ID
+[ ] 2.6  Update video (owner)
+[ ] 2.7  Update video (no token)
+[ ] 2.8  Delete video (owner)
+[ ] 2.9  Delete video (wrong user)
+
+USERS
+[ ] 3.1  Get user profile (public)
+[ ] 3.2  Get user profile (invalid ID)
+[ ] 3.3  Update my profile
+[ ] 3.4  Update my profile (no token)
+[ ] 3.5  Get my videos
+[ ] 3.6  Get my videos (no token)
+
+REPORTS
+[ ] 4.1  Create report
+[ ] 4.2  Duplicate report blocked
+[ ] 4.3  Report without token
+[ ] 4.4  Report missing fields
+
+ADMIN
+[ ] 5.1  Get all users (admin)
+[ ] 5.2  Get all users (normal user blocked)
+[ ] 5.3  Get all users (no token)
+[ ] 5.4  Ban/unban toggle
+[ ] 5.5  Delete user
+[ ] 5.6  Admin cannot delete self
+[ ] 5.7  Get all videos (admin)
+[ ] 5.8  Admin delete video
+[ ] 5.9  Get all reports
+[ ] 5.10 Resolve report
+[ ] 5.11 Dismiss report
+[ ] 5.12 Invalid status rejected
+
+───────────────────────────────────────────────────────────────
+TOTAL TESTS: 28
+All Rights Reserved © Adil Hassan
+═══════════════════════════════════════════════════════════════

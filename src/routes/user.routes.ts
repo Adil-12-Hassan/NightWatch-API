@@ -8,11 +8,11 @@ import { protect } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Public
-router.get('/:id', getUserProfile);
-
 // Protected
 router.put('/me', protect, updateMyProfile);
 router.get('/me/videos', protect, getMyVideos);
+
+// Public
+router.get('/:id', getUserProfile);
 
 export default router;
